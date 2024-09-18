@@ -33,10 +33,9 @@ jobs:
 
         ${{ github.event.head_commit.message }}
 
-        ${{ github.event_name == 'push' && 'Коммиты:' || '' }}
         ${{ steps.get_commits.outputs.commits }}
 
-        Посмотреть изменения: https://github.com/${{ github.repository }}/commit/${{github.sha}}"
+        Подробнее: https://github.com/${{ github.repository }}/commit/${{github.sha}}"
         
         MESSAGE="${MESSAGE//'%'/'%25'}"
         MESSAGE="${MESSAGE//$'\n'/'%0A'}"
