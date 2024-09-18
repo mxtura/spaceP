@@ -1,0 +1,43 @@
+name: Telegram Notification
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  issues:
+    types: [opened, closed, reopened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+      with:
+        fetch-depth: 0
+
+    - name: Get commit messages
+      if: github.event_name == 'push'
+      id: get_commits
+      run: |
+        COMMITS=$(git log --format="%h - %s" ${GITHUB_EVENT_BEFORE}..${GITHUB_SHA})
+        COMMITS="${COMMITS//'%'/'%25'}"
+        COMMITS="${COMMITS//$'\n'/'%0A'}"
+        COMMITS="${COMMITS//$'\r'/'%0D'}"
+        echo "commits=${COMMITS}" >> $GITHUB_OUTPUT
+
+    - name: Send Telegram notification
+      uses: appleboy/telegram-action@master
+      with:
+        to: ${{ secrets.TELEGRAM_CHAT_ID }}
+        token: ${{ secrets.TELEGRAM_TBOT_OKEN }}
+        message_thread_id: ${{ secrets.TELEGRAM_TOPIC_ID }}
+        message: |
+          ${{ github.event_name }} в репозитории ${{ github.repository }}
+          
+          ${{ github.event.head_commit.message }}
+          
+          ${{ github.event_name == 'push' && 'Коммиты:' || '' }}
+          ${{ steps.get_commits.outputs.commits }}
+          
+          Посмотреть изменения: https://github.com/${{ github.repository }}/commit/${{github.sha}}
