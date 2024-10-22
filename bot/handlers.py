@@ -1,7 +1,7 @@
 from aiogram import types, Dispatcher
 from aiogram.filters.command import Command
 from aiogram.types import FSInputFile
-from bot.utils import capture_image, clear_images_dir
+from bot.utils import capture_image, clear_images_dir, process_image
 
 def register_handlers(dp: Dispatcher):
     dp.message.register(send_welcome, Command("start"))
@@ -12,18 +12,18 @@ async def send_welcome(message: types.Message):
 
 async def capture_and_send_image(message: types.Message):
     await message.reply("Пожалуйста, подождите, идет захват изображения...")
-    
+
     clear_images_dir()
 
-    # Запускаем функцию захвата изображения с помощью Selenium
+    # Захват изображения с камеры
     success, image_path = capture_image()
-    print(image_path)
 
     if success:
+        # Обработка изображения через YOLO
+        processed_image_path = process_image(image_path)
         
-        # Отправляем изображение пользователю
-        image = FSInputFile(image_path)
-        
-        await message.answer_photo(image, caption="Вот ваше изображение с камеры!")
+        # Отправляем обработанное изображение пользователю
+        image = FSInputFile(processed_image_path)
+        await message.answer_photo(image, caption="Вот изображение с распознанными объектами!")
     else:
         await message.reply("Не удалось захватить изображение.")
