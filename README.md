@@ -28,21 +28,21 @@
    source venv/bin/activate
    ```
    Для Windows:
-  ```bash
-  python -m venv venv
-  venv\Scripts\activate  
-  ```
+   ```bash
+   python -m venv venv
+   venv\Scripts\activate  
+   ```
 
 3. Установите зависимости:
   
-  ```bash
-  pip install -r requirements.txt
-  ```
+   ```bash
+   pip install -r requirements.txt
+   ```
 
 4. Запуск бота
   
-  ```bash
-  python main.py
-  ```
+   ```bash
+   python main.py
+   ```
 
 Далее все прописано, что делать.
