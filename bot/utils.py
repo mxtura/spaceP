@@ -9,33 +9,118 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.action_chains import ActionChains
-from config import IMAGES_DIR
+from config import BASE_DIR ,IMAGES_DIR
 import threading
+import platform
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.firefox.service import Service as GeckoService
+from selenium.webdriver.edge.service import Service as EdgeService
+from config import CHROME_DRIVER_PATH, FIREFOX_DRIVER_PATH, EDGE_DRIVER_PATH
 
 # Глобальная переменная для хранения драйвера
 driver = None
+
+# Ссылки на загрузку драйверов
+driver_links = {
+    "chrome": "https://developer.chrome.com/docs/chromedriver",
+    "firefox": "https://geckodriver.com/download/",
+    "edge": "https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/"
+}
+
+def choose_driver():
+    """Определяет, какой браузер использовать и проверяет наличие драйвера."""
+    
+    # Проверяем и создаем папку 'drivers', если её нет
+    drivers_dir = os.path.join(BASE_DIR, 'drivers')
+    if not os.path.exists(drivers_dir):
+        os.makedirs(drivers_dir)
+        print(f"Создана папка для драйверов: {drivers_dir}")
+
+    prefs = {
+        "download.default_directory": IMAGES_DIR,
+        "download.prompt_for_download": False,
+        "safebrowsing.enabled": True
+    }
+
+    while True:
+        print("Выберите браузер для использования:")
+        print("1. Chrome")
+        print("2. Firefox")
+        print("3. Edge")
+        
+        choice = input("Введите номер браузера (1/2/3): ").strip()
+
+        driver_path = None
+        driver = None
+        service = None
+
+        if choice == '1':
+            driver_path = CHROME_DRIVER_PATH
+            if not os.path.exists(driver_path):
+                print(f"Драйвер Chrome не найден по пути {driver_path}.")
+                print("Скачайте ChromeDriver по ссылке: https://developer.chrome.com/docs/chromedriver/")
+                input("Нажмите Enter после того, как скачаете и поместите драйвер в каталог.")
+            else:
+                print(f"Драйвер Chrome найден: {driver_path}")
+                service = ChromeService(executable_path=driver_path)
+                chrome_options = webdriver.ChromeOptions()
+                chrome_options.add_argument("--headless")
+                chrome_options.add_argument("--no-sandbox")
+                chrome_options.add_argument("--disable-dev-shm-usage")
+                chrome_options.add_experimental_option("prefs", prefs)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+                break
+
+        elif choice == '2':
+            driver_path = FIREFOX_DRIVER_PATH
+            if not os.path.exists(driver_path):
+                print(f"Драйвер Firefox не найден по пути {driver_path}.")
+                print("Скачайте GeckoDriver для Firefox по ссылке: https://geckodriver.com/download/")
+                input("Нажмите Enter после того, как скачаете и поместите драйвер в каталог.")
+            else:
+                print(f"Драйвер Firefox найден: {driver_path}")
+                service = FirefoxService(executable_path=driver_path)
+                # Настройка профиля Firefox
+                firefox_profile = webdriver.FirefoxProfile()
+                firefox_profile.set_preference("browser.download.folderList", 2)  # Использовать кастомную папку
+                firefox_profile.set_preference("browser.download.dir", IMAGES_DIR)  # Путь к папке загрузки
+                firefox_profile.set_preference("browser.download.useDownloadDir", True)
+                firefox_profile.set_preference("browser.helperApps.neverAsk.saveToDisk", "image/png")  # Без запроса на сохранение
+                firefox_profile.set_preference("pdfjs.disabled", True)  # Отключаем встроенный просмотрщик PDF
+
+                firefox_options = webdriver.FirefoxOptions()
+                firefox_options.add_argument("--headless")
+                
+                driver = webdriver.Firefox(service=service, options=firefox_options, firefox_profile=firefox_profile)
+                break
+
+        elif choice == '3':
+            driver_path = EDGE_DRIVER_PATH
+            if not os.path.exists(driver_path):
+                print(f"Драйвер Edge не найден по пути {driver_path}.")
+                print("Скачайте EdgeDriver по ссылке: https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/")
+                input("Нажмите Enter после того, как скачаете и поместите драйвер в каталог.")
+            else:
+                print(f"Драйвер Edge найден: {driver_path}")
+                service = EdgeService(executable_path=driver_path)
+                edge_options = webdriver.EdgeOptions()
+                edge_options.add_argument("--headless")
+                edge_options.add_experimental_option("prefs", prefs)
+                driver = webdriver.Edge(service=service, options=edge_options)
+                break
+
+        else:
+            print("Некорректный выбор. Попробуйте снова.")
+
+    return driver
 
 def init_driver():
     """Инициализируем драйвер и открываем страницу с видеопотоком один раз."""
     global driver
     if driver is None:
-        # Настройка ChromeDriver для Selenium
-        service = Service('/usr/bin/chromedriver')
-        chrome_options = webdriver.ChromeOptions()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
+        # Выбираем браузер
+        driver = choose_driver()
 
-        # Настройка для сохранения файлов
-        prefs = {
-            "download.default_directory": IMAGES_DIR,
-            "download.prompt_for_download": False,
-            "safebrowsing.enabled": True
-        }
-        chrome_options.add_experimental_option("prefs", prefs)
-
-        # Инициализация драйвера
-        driver = webdriver.Chrome(service=service, options=chrome_options)
         print("Драйвер инициализирован. Открываем страницу с видеопотоком...")
 
         # Открываем страницу с видеопотоком
@@ -143,9 +228,9 @@ def increase_contrast(image):
 def process_image(image_path):
     """Обрабатывает изображение с использованием YOLO и распознает машины только в заданной области."""
     # Путь до конфигурации и весов модели YOLO (указываем из папки Resources)
-    path_conf = "./Resources/yolov4-tiny.cfg"
-    path_weights = "./Resources/yolov4-tiny.weights"
-    path_coco_names = "./Resources/coco.names.txt"
+    path_conf = "./resources/yolov4-tiny.cfg"
+    path_weights = "./resources/yolov4-tiny.weights"
+    path_coco_names = "./resources/coco.names.txt"
 
     # Загрузка классов объектов (например, машины, велосипеды и т.д.)
     with open(path_coco_names, 'r') as f:
@@ -247,6 +332,12 @@ def process_image(image_path):
 
 def clear_images_dir():
     """Удаляет все файлы в папке IMAGES_DIR."""
+
+    images_dir = os.path.join(BASE_DIR, 'data', 'images')
+    if not os.path.exists(images_dir):
+        os.makedirs(images_dir)
+        print(f"Создана папка для драйверов: {images_dir}")
+
     try:
         for file in os.listdir(IMAGES_DIR):
             file_path = os.path.join(IMAGES_DIR, file)
