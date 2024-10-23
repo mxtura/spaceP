@@ -13,7 +13,7 @@ from config import BASE_DIR ,IMAGES_DIR
 import threading
 import platform
 from selenium.webdriver.chrome.service import Service as ChromeService
-from selenium.webdriver.firefox.service import Service as GeckoService
+from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.edge.service import Service as EdgeService
 from config import CHROME_DRIVER_PATH, FIREFOX_DRIVER_PATH, EDGE_DRIVER_PATH
 
@@ -80,18 +80,16 @@ def choose_driver():
             else:
                 print(f"Драйвер Firefox найден: {driver_path}")
                 service = FirefoxService(executable_path=driver_path)
-                # Настройка профиля Firefox
-                firefox_profile = webdriver.FirefoxProfile()
-                firefox_profile.set_preference("browser.download.folderList", 2)  # Использовать кастомную папку
-                firefox_profile.set_preference("browser.download.dir", IMAGES_DIR)  # Путь к папке загрузки
-                firefox_profile.set_preference("browser.download.useDownloadDir", True)
-                firefox_profile.set_preference("browser.helperApps.neverAsk.saveToDisk", "image/png")  # Без запроса на сохранение
-                firefox_profile.set_preference("pdfjs.disabled", True)  # Отключаем встроенный просмотрщик PDF
-
                 firefox_options = webdriver.FirefoxOptions()
                 firefox_options.add_argument("--headless")
-                
-                driver = webdriver.Firefox(service=service, options=firefox_options, firefox_profile=firefox_profile)
+
+                # Настройка для сохранения файлов в Firefox
+                firefox_options.set_preference("browser.download.folderList", 2)
+                firefox_options.set_preference("browser.download.dir", IMAGES_DIR)
+                firefox_options.set_preference("browser.download.useDownloadDir", True)
+                firefox_options.set_preference("browser.helperApps.neverAsk.saveToDisk", "image/png")
+
+                driver = webdriver.Firefox(service=service, options=firefox_options)
                 break
 
         elif choice == '3':
