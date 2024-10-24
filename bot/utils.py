@@ -16,9 +16,11 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.firefox.service import Service as FirefoxService
 from selenium.webdriver.edge.service import Service as EdgeService
 from config import CHROME_DRIVER_PATH, FIREFOX_DRIVER_PATH, EDGE_DRIVER_PATH
+from config import CAMERAS
 
 # Глобальная переменная для хранения драйвера
-driver = None
+driver = None  # Один драйвер для всех камер
+drivers = {}
 
 # Ссылки на загрузку драйверов
 driver_links = {
@@ -28,8 +30,12 @@ driver_links = {
 }
 
 def choose_driver():
-    """Определяет, какой браузер использовать и проверяет наличие драйвера."""
+    """Инициализирует драйвер один раз и использует его для всех камер."""
+    global driver
     
+    if driver:
+        return driver
+
     # Проверяем и создаем папку 'drivers', если её нет
     drivers_dir = os.path.join(BASE_DIR, 'drivers')
     if not os.path.exists(drivers_dir):
@@ -51,7 +57,6 @@ def choose_driver():
         choice = input("Введите номер браузера (1/2/3): ").strip()
 
         driver_path = None
-        driver = None
         service = None
 
         if choice == '1':
@@ -112,19 +117,36 @@ def choose_driver():
 
     return driver
 
-def init_driver():
-    """Инициализируем драйвер и открываем страницу с видеопотоком один раз."""
-    global driver
-    if driver is None:
-        # Выбираем браузер
-        driver = choose_driver()
+def init_all_cameras():
+    """Запускаем все камеры с использованием одного драйвера и разных вкладок."""
+    global drivers
+    driver = choose_driver()
 
-        print("Драйвер инициализирован. Открываем страницу с видеопотоком...")
+    for camera_name, camera_config in CAMERAS.items():
+        camera_url = camera_config.get("url")  # Получаем URL для камеры
+        if not camera_url:
+            print(f"URL для {camera_name} не найден.")
+            continue
 
-        # Открываем страницу с видеопотоком
-        driver.get("https://cctv.tmpk.net/dubna.vokzal.bolshaya.volga..na.sajt-eef379341e/embed.html?autoplay=true&play_duration=600&token=3.wd_jz8txAAAAAAAAAAEABh7pwDgdfWpsYhspsa0WeIoUtabnbFLJMp6Q")
-        time.sleep(5)  # Ждем загрузки страницы
-        print("Страница с видеопотоком открыта.")
+        if len(drivers) == 0:
+            # Открываем первую камеру в основном окне
+            print(f"Инициализация драйвера для {camera_name}...")
+            driver.get(camera_url)
+            time.sleep(1)
+        else:
+            # Открываем каждую следующую камеру в новой вкладке
+            print(f"Открываем новую вкладку для {camera_name}...")
+            driver.execute_script("window.open('');")  # Открываем новую вкладку
+            driver.switch_to.window(driver.window_handles[-1])  # Переходим в новую вкладку
+            driver.get(camera_url)
+            time.sleep(1)
+
+        # Сохраняем только идентификатор вкладки для каждой камеры
+        drivers[camera_name] = driver.current_window_handle
+        print(f"Страница с {camera_name} открыта.")
+
+    print("Все камеры инициализированы.")
+	
 
 def refresh_driver():
     """Обновляем страницу, чтобы сессия оставалась активной."""
@@ -134,16 +156,23 @@ def refresh_driver():
         driver.refresh()
         time.sleep(5)  # Ждем, пока страница полностью обновится
 
-def capture_image():
+def capture_image(camera_name):
     """Захватываем изображение с открытой страницы."""
+    
+    driver_handle = drivers.get(camera_name)
+    if not driver_handle:
+        print(f"Драйвер для {camera_name} не найден.")
+        return False, None
+    
+    # Переключаемся на нужную вкладку
+    driver.switch_to.window(driver_handle)
+    
     # Генерируем уникальное имя файла на основе текущего времени
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     new_image_filename = f"capture_{timestamp}.png"
     new_image_path = os.path.join(IMAGES_DIR, new_image_filename)
 
     try:
-        init_driver()  # Инициализация драйвера, если он еще не запущен
-
         # Эмулируем наведение на панель
         panel = driver.find_element(By.CLASS_NAME, 'media-control')
         actions = ActionChains(driver)
@@ -223,7 +252,7 @@ def increase_contrast(image):
     enhanced_image = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR)  # Преобразуем обратно в BGR
     return enhanced_image
 
-def process_image(image_path):
+def process_image(image_path, camera_name, detection_line_start, detection_line_end):
     """Обрабатывает изображение с использованием YOLO и распознает машины только в заданной области."""
     # Путь до конфигурации и весов модели YOLO (указываем из папки Resources)
     path_conf = "./resources/yolov4-tiny.cfg"
@@ -260,18 +289,18 @@ def process_image(image_path):
     height, width, _ = image.shape
     print(f"[DEBUG] Размеры изображения: ширина={width}, высота={height}")
 
+    # Преобразуем границы относительно высоты и ширины изображения
+    detection_line_start = (int(detection_line_start[0] * width), int(detection_line_start[1] * height))
+    detection_line_end = (int(detection_line_end[0] * width), int(detection_line_end[1] * height))
+
+    # Отрисовка наклонной границы на изображении
+    cv2.line(image, detection_line_start, detection_line_end, (0, 0, 255), 2)  # Красная линия
+
     # Подготовка изображения для YOLO с размером 608x608
     print("[DEBUG] Подготавливаем изображение для YOLO...")
     blob = cv2.dnn.blobFromImage(image, 0.00392, (608, 608), (0, 0, 0), True, crop=False)
     net.setInput(blob)
     outs = net.forward(output_layers)
-
-    # Определяем угловую область для детекции (например, более низкая слева и более высокая справа)
-    detection_line_start = (0, int(height * 0.68))  # Левый конец линии ниже (70% высоты)
-    detection_line_end = (width, int(height * 0.35))  # Правый конец линии выше (40% высоты)
-
-    # Отрисовка наклонной границы на изображении
-    cv2.line(image, detection_line_start, detection_line_end, (0, 0, 255), 2)  # Красная линия
 
     # Постобработка - извлекаем координаты найденных объектов
     class_ids = []
@@ -345,19 +374,33 @@ def clear_images_dir():
     except Exception as e:
         print(f"Ошибка при очистке папки: {e}")
 
-def close_driver():
-    """Закрываем драйвер при завершении работы бота."""
-    global driver
-    if driver:
-        driver.quit()
-        driver = None
-        print("Драйвер закрыт.")
+def close_drivers():
+    """Закрываем все драйверы для всех камер."""
+    global drivers
+    for camera_name, driver in drivers.items():
+        if driver:
+            print(f"Закрываем драйвер для {camera_name}...")
+            driver.quit()
+    drivers.clear()
+    print("Все драйверы закрыты.")
 
-def periodic_refresh(interval):
-    """Периодически обновляет страницу каждые `interval` минут."""
+def periodic_refresh(interval=10):
+    """Периодически обновляет страницы видеопотоков каждые interval минут."""
+    global driver
     while True:
         time.sleep(interval * 60)
-        refresh_driver()
+        print("Обновление всех видеопотоков...")
+        for camera_name, driver_handle in drivers.items():
+            if driver_handle:
+                try:
+                    # Переключаемся на вкладку камеры
+                    driver.switch_to.window(driver_handle)
+                    print(f"Обновляем видеопоток для {camera_name}...")
+                    driver.refresh()
+                    time.sleep(1)  # Ждем, пока страница обновится
+                except Exception as e:
+                    print(f"Ошибка при обновлении {camera_name}: {e}")
+
 
 # Вызовем функцию обновления в отдельном потоке, чтобы она работала фоном каждые 10 минут
 threading.Thread(target=periodic_refresh, args=(10,), daemon=True).start()
