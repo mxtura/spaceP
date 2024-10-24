@@ -19,8 +19,15 @@
    git clone https://github.com/mxtura/spaceP.git
    cd spaceP
    ```
+
+   или по ssh (так лучше)
    
-2. Создайте и активируйте виртуальное окружение:
+   ```bash
+   git clone git@github.com:mxtura/spaceP.git
+   cd spaceP
+   ```
+   
+3. Создайте и активируйте виртуальное окружение:
 
    Для Linux/MacOS:
    ```bash
@@ -33,13 +40,13 @@
    venv\Scripts\activate  
    ```
 
-3. Установите зависимости:
+4. Установите зависимости:
   
    ```bash
    pip install -r requirements.txt
    ```
 
-4. Запуск бота
+5. Запуск бота
   
    ```bash
    python main.py
