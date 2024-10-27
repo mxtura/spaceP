@@ -2,6 +2,7 @@ import os
 import cv2
 import numpy as np
 import time
+import json
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -253,108 +254,155 @@ def increase_contrast(image):
     return enhanced_image
 
 def process_image(image_path, camera_name, detection_line_start, detection_line_end):
-    """Обрабатывает изображение с использованием YOLO и распознает машины только в заданной области."""
-    # Путь до конфигурации и весов модели YOLO (указываем из папки Resources)
+    """
+    Обрабатывает изображение с использованием YOLO и определяет занятость парковочных мест.
+    
+    Args:
+        image_path: путь к изображению
+        camera_name: название камеры
+        detection_line_start: начальная точка линии детекции (x, y)
+        detection_line_end: конечная точка линии детекции (x, y)
+    """
+    
+    # Загрузка модели и классов
     path_conf = "./resources/yolov4-tiny.cfg"
     path_weights = "./resources/yolov4-tiny.weights"
     path_coco_names = "./resources/coco.names.txt"
 
-    # Загрузка классов объектов (например, машины, велосипеды и т.д.)
     with open(path_coco_names, 'r') as f:
         classes = [line.strip() for line in f.readlines()]
 
-    print("[DEBUG] Загружаем классы объектов...")
-    print(f"[DEBUG] Классы загружены: {classes}")
-
-    # Загрузка модели YOLO
     print("[DEBUG] Загружаем модель YOLO...")
     net = cv2.dnn.readNetFromDarknet(path_conf, path_weights)
     layer_names = net.getLayerNames()
     output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
-    print(f"[DEBUG] Выходные слои: {output_layers}")
 
-    # Загрузка изображения
+    # Загрузка и предобработка изображения
     print(f"[DEBUG] Загружаем изображение: {image_path}")
     image = cv2.imread(image_path)
-
-    # Увеличиваем яркость
     image = adjust_brightness(image, factor=1.5)
-    
-    # Повышаем контраст
     image = increase_contrast(image)
-    
-    # Увеличиваем разрешение
-    image = upscale_image(image, scale_factor=1.5)  # Повышаем разрешение на 50%
+    image = upscale_image(image, scale_factor=1.5)
 
     height, width, _ = image.shape
-    print(f"[DEBUG] Размеры изображения: ширина={width}, высота={height}")
-
-    # Преобразуем границы относительно высоты и ширины изображения
+    
+    # Загрузка координат парковочных мест из JSON
+    json_path = f"./resources/parking_spaces.json"
+    try:
+        with open(json_path, 'r') as f:
+            parking_spaces_abs = json.load(f)
+        print(f"[DEBUG] Загружены координаты парковочных мест из {json_path}")
+    except FileNotFoundError:
+        print(f"[ERROR] Файл с координатами парковочных мест не найден: {json_path}")
+        return None
+    
+    # Преобразование координат линии детекции
     detection_line_start = (int(detection_line_start[0] * width), int(detection_line_start[1] * height))
     detection_line_end = (int(detection_line_end[0] * width), int(detection_line_end[1] * height))
+    
+    # Отрисовка линии детекции
+    cv2.line(image, detection_line_start, detection_line_end, (0, 0, 255), 2)
 
-    # Отрисовка наклонной границы на изображении
-    cv2.line(image, detection_line_start, detection_line_end, (0, 0, 255), 2)  # Красная линия
-
-    # Подготовка изображения для YOLO с размером 608x608
-    print("[DEBUG] Подготавливаем изображение для YOLO...")
+    # Детекция автомобилей
     blob = cv2.dnn.blobFromImage(image, 0.00392, (608, 608), (0, 0, 0), True, crop=False)
     net.setInput(blob)
     outs = net.forward(output_layers)
 
-    # Постобработка - извлекаем координаты найденных объектов
-    class_ids = []
-    confidences = []
+    # Обработка результатов детекции
     boxes = []
+    confidences = []
+    class_ids = []
 
-    print(f"[DEBUG] Количество обнаруженных объектов (raw output): {len(outs)}")
     for out in outs:
         for detection in out:
             scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            if confidence > 0.2:  # Точность более 30%
+            
+            # Детектируем только автомобили (class_id == 2 для COCO dataset)
+            if confidence > 0.3 and class_id == 2:
                 center_x = int(detection[0] * width)
                 center_y = int(detection[1] * height)
                 w = int(detection[2] * width)
                 h = int(detection[3] * height)
 
-                # Координаты верхнего левого угла
                 x = int(center_x - w / 2)
                 y = int(center_y - h / 2)
 
-                # Проверяем, находится ли объект ниже наклонной линии (условие с использованием уравнения линии)
+                # Проверка положения относительно линии детекции
                 if y >= detection_line_start[1] + (detection_line_end[1] - detection_line_start[1]) * (x / width):
                     boxes.append([x, y, w, h])
                     confidences.append(float(confidence))
                     class_ids.append(class_id)
 
-    print(f"[DEBUG] Найдено объектов: {len(boxes)}")
-
-    # Убираем пересекающиеся области
+    # Применение NMS для устранения перекрывающихся боксов
     indices = cv2.dnn.NMSBoxes(boxes, confidences, 0.3, 0.4)
-    print(f"[DEBUG] Осталось объектов после NMS: {len(indices)}")
+    detected_cars = [boxes[i[0]] if isinstance(i, np.ndarray) else boxes[i] for i in indices]
 
-    # Отрисовка результатов на изображении
-    if len(indices) > 0:  # Проверка, есть ли объекты для обработки
-        for i in indices:
-            if isinstance(i, np.ndarray):  # Проверяем, является ли i массивом
-                i = i[0]  # Если это массив, берем первый элемент
-            box = boxes[i]
-            x, y, w, h = box
-            label = str(classes[class_ids[i]])
-            color = (0, 255, 0)
-            cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
-            cv2.putText(image, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
-    else:
-        print("Не удалось найти объекты на изображении.")
+    # Проверка занятости парковочных мест
+    for idx, space_abs in enumerate(parking_spaces_abs):
+        x, y, w, h = space_abs
+        
+        is_occupied = False
+        for car in detected_cars:
+            # Вычисление IoU между парковочным местом и автомобилем
+            iou = compute_iou([x, y, w, h], car)
+            if iou > 0.45:  # Порог перекрытия
+                is_occupied = True
+                break
+        
+        # Отрисовка парковочного места
+        color = (0, 0, 255) if is_occupied else (0, 255, 0)
+        label = "OCCUPIED" if is_occupied else "FREE"
+        cv2.rectangle(image, 
+                     (x, y), 
+                     (x + w, y + h), 
+                     color, 2)
+        cv2.putText(image, label, 
+                    (x, y - 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-    # Сохраняем изображение с результатами
+    # Отрисовка детектированных автомобилей
+    for car in detected_cars:
+        x, y, w, h = car
+        cv2.rectangle(image, (x, y), (x + w, y + h), (255, 255, 0), 2)
+        cv2.putText(image, "CAR", (x, y - 10), 
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
+
+    # Сохранение результата
     result_image_path = os.path.join(IMAGES_DIR, "processed_" + os.path.basename(image_path))
     cv2.imwrite(result_image_path, image)
     
     print(f"[DEBUG] Изображение сохранено по пути: {result_image_path}")
     return result_image_path
+
+def compute_iou(box1, box2):
+    """
+    Вычисляет IoU (Intersection over Union) между двумя боксами.
+    
+    Args:
+        box1: [x1, y1, w1, h1]
+        box2: [x2, y2, w2, h2]
+    """
+    # Преобразование в формат [x1, y1, x2, y2]
+    b1 = [box1[0], box1[1], box1[0] + box1[2], box1[1] + box1[3]]
+    b2 = [box2[0], box2[1], box2[0] + box2[2], box2[1] + box2[3]]
+    
+    # Определение координат пересечения
+    x_left = max(b1[0], b2[0])
+    y_top = max(b1[1], b2[1])
+    x_right = min(b1[2], b2[2])
+    y_bottom = min(b1[3], b2[3])
+    
+    if x_right < x_left or y_bottom < y_top:
+        return 0.0
+    
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    box1_area = (b1[2] - b1[0]) * (b1[3] - b1[1])
+    box2_area = (b2[2] - b2[0]) * (b2[3] - b2[1])
+    
+    iou = intersection_area / float(box1_area + box2_area - intersection_area)
+    return max(0.0, min(iou, 1.0))
 
 
 def clear_images_dir():
