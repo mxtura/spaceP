@@ -52,7 +52,6 @@ async def handle_camera_choice(callback_query: types.CallbackQuery, callback_dat
         return
 
     scheme_image_path = draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end)
-    scheme_image_path = draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end)
     processed_image_path, photo_image_path = process_image(camera_name, detection_line_start, detection_line_end)
     if scheme_image_path is not None:
         scheme_image = FSInputFile(scheme_image_path)
