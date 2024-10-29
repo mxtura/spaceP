@@ -312,7 +312,7 @@ def detect_cars(image, detection_line_start, detection_line_end):
     return detected_cars
 
 
-def check_parking_occupancy(detected_cars, parking_spaces_path):
+def get_parking_occupancy(camera_name, detected_cars, parking_spaces_path):
     """
     Проверяет занятость парковочных мест
     """
@@ -336,6 +336,10 @@ def check_parking_occupancy(detected_cars, parking_spaces_path):
                 is_occupied = True
                 break
         parking_occupancy.append(is_occupied)
+
+    #Реверсим лист для bv_station, так как на схеме парковка представлена с другой перспективы
+    if camera_name == "bv_station":
+        parking_occupancy.reverse()
     return parking_occupancy
 
 
@@ -456,7 +460,7 @@ def draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end
 
     #Вычисление занятости парковки
     parking_spaces_path = "./resources/parking_spaces/" + camera_name + ".json"
-    parking_occupancy = check_parking_occupancy(detected_cars, parking_spaces_path)
+    parking_occupancy = get_parking_occupancy(camera_name, detected_cars, parking_spaces_path)
     if parking_occupancy is None:
         return None
 
@@ -469,10 +473,6 @@ def draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end
     except FileNotFoundError:
         print(f"[ERROR] Файл с координатами парковочных мест на схеме не найден: {parking_scheme_spaces_path}")
         return None
-
-    #Реверсим лист для bv_station, так как на схеме парковка представлена с другой перспективы
-    if camera_name == "bv_station":
-        parking_occupancy.reverse()
 
     # Отрисовка парковочных мест
     for idx, space in enumerate(parking_scheme_spaces):
