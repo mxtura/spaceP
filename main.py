@@ -28,5 +28,6 @@ async def main():
         # Закрываем драйвер Selenium при завершении работы бота
         close_drivers()
 
+
 if __name__ == '__main__':
     asyncio.run(main())
