@@ -3,6 +3,8 @@ import os
 import threading
 from datetime import datetime
 
+from PIL import Image
+
 import cv2
 import numpy as np
 import time
@@ -422,7 +424,7 @@ def process_image(camera_name, detection_line_start, detection_line_end):
     cv2.imwrite(result_image_path, image)
     
     print(f"[INFO] Изображение сохранено по пути: {result_image_path}")
-    return result_image_path
+    return result_image_path, captured_image_path
 
 
 def draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end):

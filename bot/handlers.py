@@ -52,17 +52,23 @@ async def handle_camera_choice(callback_query: types.CallbackQuery, callback_dat
         return
 
     scheme_image_path = draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end)
+    scheme_image_path = draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end)
+    processed_image_path, photo_image_path = process_image(camera_name, detection_line_start, detection_line_end)
     if scheme_image_path is not None:
-        image = FSInputFile(scheme_image_path)
+        scheme_image = FSInputFile(scheme_image_path)
+        photo_image = FSInputFile(photo_image_path)
+        
         await callback_query.message.answer_photo(
-            image,
-            caption=f"Вот схема парковки на {CAMERAS[camera_name]['title']} с указанием свободных и занятых мест!"
-                    f"Зеленые - свободные, красные - занятые.",
+            scheme_image,
+            caption=f"Схема парковки на {CAMERAS[camera_name]['title']} с указанием свободных и занятых мест! Зеленые - свободные, красные - занятые."
+        )
+        await callback_query.message.answer_photo(
+            photo_image,
+            caption="Вот фотография парковки!"
         )
         return
 
 
-    processed_image_path = process_image(camera_name, detection_line_start, detection_line_end)
     if processed_image_path is not None:
         image = FSInputFile(processed_image_path)
         await callback_query.message.answer_photo(
