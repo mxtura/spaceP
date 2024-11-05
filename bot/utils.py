@@ -476,6 +476,8 @@ def draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end
         print(f"[ERROR] Файл с координатами парковочных мест на схеме не найден: {parking_scheme_spaces_path}")
         return None
 
+    #c = count_free_space(camera_name, detection_line_start, detection_line_end)
+
     # Отрисовка парковочных мест
     for idx, space in enumerate(parking_scheme_spaces):
         x1, y1, x2, y2 = space
@@ -488,6 +490,41 @@ def draw_parking_on_scheme(camera_name, detection_line_start, detection_line_end
     cv2.imwrite(result_image_path, scheme_image)
     print(f"[INFO] Схема парковки с отметкой мест сохранена по пути: {result_image_path}")
     return result_image_path
+
+def count_free_space(camera_name, detection_line_start, detection_line_end):
+    #Захват изображения с камеры
+    captured_image_path = capture_image(camera_name)
+    if captured_image_path is None:
+        return None
+
+    #Загрузка схемы парковки
+    parking_scheme_path = "./resources/parking_schemes/" + camera_name + ".png"
+    scheme_image = cv2.imread(parking_scheme_path)
+    if scheme_image is None:
+        print(f"[ERROR] Невозможно загрузить схему: {parking_scheme_path}")
+        return None
+    print(f"[INFO] Загружена схема парковки: {parking_scheme_path}")
+    print(f"[DEBUG] Загружаем изображение: {captured_image_path}")
+    image = cv2.imread(captured_image_path)
+    image = adjust_brightness(image, factor=1.5)
+    image = increase_contrast(image)
+    image = upscale_image(image, scale_factor=1.5)
+
+    detected_cars = detect_cars(image, detection_line_start, detection_line_end)
+
+    #Вычисление занятости парковки
+    parking_spaces_path = "./resources/parking_spaces/" + camera_name + ".json"
+    parking_occupancy = get_parking_occupancy(camera_name, detected_cars, parking_spaces_path)
+    if parking_occupancy is None:
+        return None
+
+    count = 0
+
+    for i in parking_occupancy:
+        if not i:
+            count += 1
+    
+    return count
 
 
 def compute_iou(box1, box2):

@@ -3,8 +3,9 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.filters.command import Command
 from aiogram.types import FSInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-
-from bot.utils import clear_images_dir, process_image, draw_parking_on_scheme
+import asyncio
+from typing import Optional
+from bot.utils import clear_images_dir, count_free_space, process_image, draw_parking_on_scheme
 from config import CAMERAS
 
 
@@ -12,12 +13,18 @@ from config import CAMERAS
 class CameraCallback(CallbackData, prefix="camera"):
     name: str
 
+class StatusCallback(CallbackData, prefix="check_status"):
+    duration: int
+    camera_name: str
+    detection_line_start_x: float
+    detection_line_start_y: float
+    detection_line_end_x: float
+    detection_line_end_y: float
 
 async def send_welcome(message: types.Message):
     await message.reply(
         "Привет! Я бот поиска свободных мест на парковке. Отправь команду /capture, чтобы выбрать парковку."
     )
-
 
 async def send_camera_options(message: types.Message):
     builder = InlineKeyboardBuilder()
@@ -65,6 +72,7 @@ async def handle_camera_choice(callback_query: types.CallbackQuery, callback_dat
             photo_image,
             caption="Вот фотография парковки!"
         )
+        await parking_status(callback_query.message)
         return
 
 
@@ -79,7 +87,58 @@ async def handle_camera_choice(callback_query: types.CallbackQuery, callback_dat
     await callback_query.message.answer(f"Не удалось захватить изображение с {CAMERAS[camera_name]['title']}.")
 
 
+async def parking_status(message: types.Message):
+    camera_name = "bv_station"  # Используем камеру по умолчанию
+    camera_config = CAMERAS.get(camera_name, {})
+    detection_line_start = camera_config.get("detection_line_start")
+    detection_line_end = camera_config.get("detection_line_end")
+
+
+    if detection_line_start is None or detection_line_end is None:
+        await message.reply("Ошибка: настройки камеры не заданы.")
+        return
+
+
+    # Передаем координаты как отдельные числа
+    keyboard = types.InlineKeyboardMarkup(inline_keyboard=[
+        [
+            types.InlineKeyboardButton(
+                text=f"Показать статус ({duration} мин)", 
+                callback_data=StatusCallback(
+                    duration=duration,
+                    camera_name=camera_name,
+                    detection_line_start_x=detection_line_start[0],
+                    detection_line_start_y=detection_line_start[1],
+                    detection_line_end_x=detection_line_end[0],
+                    detection_line_end_y=detection_line_end[1]
+                ).pack()
+            )
+        ] for duration in [5, 10, 20]
+    ])
+    
+    await message.reply("Выберите длительность отображения статуса парковки:", reply_markup=keyboard)
+
+
+async def check_status(callback_query: types.CallbackQuery, callback_data: StatusCallback):
+    duration = callback_data.duration
+    camera_name = callback_data.camera_name
+    
+    # Восстанавливаем кортежи из отдельных значений
+    detection_line_start = (callback_data.detection_line_start_x, callback_data.detection_line_start_y)
+    detection_line_end = (callback_data.detection_line_end_x, callback_data.detection_line_end_y)
+
+    for _ in range(duration):
+        free_spaces = count_free_space(camera_name, detection_line_start, detection_line_end)
+        if free_spaces is not None:
+            await callback_query.message.answer(f"Свободных мест на парковке: {free_spaces}")
+        else:
+            await callback_query.message.answer("Ошибка при подсчете свободных мест.")
+        await asyncio.sleep(60)
+
+
 def register_handlers(dp: Dispatcher):
     dp.message.register(send_welcome, Command("start"))
     dp.message.register(send_camera_options, Command("capture"))
+    dp.message.register(parking_status, Command("status"))
     dp.callback_query.register(handle_camera_choice, CameraCallback.filter())
+    dp.callback_query.register(check_status, StatusCallback.filter())
