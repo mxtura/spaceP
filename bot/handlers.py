@@ -26,6 +26,11 @@ async def send_welcome(message: types.Message):
         "Привет! Я бот поиска свободных мест на парковке. Отправь команду /capture, чтобы выбрать парковку."
     )
 
+async def send_stop(message: types.Message):
+    await message.reply(
+        "Отслеживание прекращено."
+    )
+
 async def send_camera_options(message: types.Message):
     builder = InlineKeyboardBuilder()
     for camera_id, camera_info in CAMERAS.items():
@@ -133,6 +138,8 @@ async def check_status(callback_query: types.CallbackQuery, callback_data: Statu
             await callback_query.message.answer(f"Свободных мест на парковке: {free_spaces}")
         else:
             await callback_query.message.answer("Ошибка при подсчете свободных мест.")
+        if (send_stop):
+            return
         await asyncio.sleep(60)
 
 
@@ -140,5 +147,6 @@ def register_handlers(dp: Dispatcher):
     dp.message.register(send_welcome, Command("start"))
     dp.message.register(send_camera_options, Command("capture"))
     dp.message.register(parking_status, Command("status"))
+    dp.message.register(send_stop, Command("stop"))
     dp.callback_query.register(handle_camera_choice, CameraCallback.filter())
     dp.callback_query.register(check_status, StatusCallback.filter())
